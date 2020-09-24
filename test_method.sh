@@ -4,65 +4,62 @@ usage() { echo "Usage: $0 [-s \"<from_method> <to_method>\"] [-t <time_out>] [-o
 
 # Get flags and arguments
 while getopts ":s:t:o:" opt; do
-  case $opt in
-    s)
-      echo "-s was triggered, Parameter: $OPTARG" >&2
-      
-      set -f # disable glob
-      IFS=' ' # split on space characters
-      switch2=($OPTARG) # keep 2 methods
+	case $opt in
+		s)
+			echo "-s was triggered, Parameter: $OPTARG" >&2
+			
+			switch2=($OPTARG) # keep 2 methods
+			method="${switch2[0]}"
+			method2="${switch2[1]}"
 
-      method="${switch2[0]}"
-      method2="${switch2[1]}"
-
-      # For later operations
-      SFLAG="-switch"
-      METHOD_NM="switch_${method2}"
-      ;;
-    t)
-      echo "-t was triggered, Parameter: $OPTARG" >&2
-      TFLAG="-t"
-      TIMEOUT=${OPTARG}
-      ;;
-    o)
-      echo "-o was triggered, Parameter: $OPTARG" >&2
-      OFLAG="-o"
-      CWD=$(pwd)
-      OPTIONS="${CWD}/${OPTARG}"
-      METHOD_NM="${METHOD_NM}_o"
-      if [[ ! -f  $OPTIONS ]]; then
-        echo "Options file not found."  # check if file exists
-        exit 127
-      fi
-      ;;
-    \?)
-      echo "Invalid option: -$OPTARG" >&2
-      usage
-      exit 1
-      ;;
-    :)
-      echo "Option -$OPTARG requires an argument." >&2
-      exit 1
-      ;;
-  esac
+			# For later operations
+			SFLAG="-switch"
+			METHOD_NM="switch"
+			;;
+		t)
+			echo "-t was triggered, Parameter: $OPTARG" >&2
+			TFLAG="-t"
+			TIMEOUT=${OPTARG}
+			;;
+		o)
+			echo "-o was triggered, Parameter: $OPTARG" >&2
+			OFLAG="-o"
+			CWD=$(pwd)
+			OPTIONS="${CWD}/${OPTARG}"
+			METHOD_NM="${METHOD_NM}_o"
+			if [[ ! -f  $OPTIONS ]]; then
+				echo "Options file not found."  # check if file exists
+				exit 127
+			fi
+			;;
+		\?)
+			echo "Invalid option: -$OPTARG" >&2
+			usage
+			exit 1
+			;;
+		:)
+			echo "Option -$OPTARG requires an argument." >&2
+			exit 1
+			;;
+	esac
 done
 
 if [ -z "$method" ]
 then
-    # Method to execute
-    read -p "Choose method (e.g. conj): " method
-    method="${method}"
-    METHOD_NM="${method}"
+		# Method to execute
+		read -p "Choose method (e.g. conj): " method
+		method="${method}"
+		METHOD_NM="${method}"
 fi
 
 ##################################################
 ################## USER INPUT ####################
 
 # Catch user input with files list
-read -p "Enter file with list of inputs : " ifiles
+read -p "Enter data source folder : " ifiles
 
 # Structure name is based on structure sequential number
-read -p "Enter results' folder name : " SAMPLES
+read -p "Enter destination folder name : " SAMPLES
 
 # Choose testing directory
 read -p "Choose test environment: " testdir
@@ -84,7 +81,7 @@ INPUT_DIR="input"
 OUTPUT_DIR="output"
 
 # Data DIR
-DATA_DIR="/users/phd/tonyts/Desktop/Data"
+DATA_DIR="/home/sanantoniochili/Desktop/PhD/Data"
 
 # Map file
 MAP="map_files.txt"
@@ -92,28 +89,29 @@ MAP="map_files.txt"
 # Log file
 LOG="${METHOD_NM}_stoplog.txt"
 
-# Find file with list of inputs
+# Find folder with input
 ifiles="${DATA_DIR}/${ifiles}"
-if [[ ! -f  $ifiles ]]; then
-	echo "File with input list not found."	# check if file exists
-	exit 127
+if [ ! -d "$ifiles" ]; then
+		echo "Folder ${ifiles} does not exist."
 fi
-readarray -t filesList < $ifiles
+filesList=($(ls -Rv $ifiles | awk '/:$/&&f{s=$0;f=0}
+/:$/&&!f{sub(/:$/,"");s=$0;f=1;next}
+NF&&f{ print s"/"$0 }'))
 
 ##################################################
 ################# DIRECTORIES ####################
 
 # Work inside new test directory
 if [ ! -d "$testdir" ]; then
-    echo "Creating test directory.."
-    mkdir tests/$testdir
+		echo "Creating test directory.."
+		mkdir tests/$testdir
 fi
 TEST_DIR="tests/${testdir}/${METHOD_NM}"
 
 # Check existence of method DIR
 if [ ! -d "${TEST_DIR}" ]; then
-    echo "Creating method directory.."
-    mkdir $TEST_DIR
+		echo "Creating method directory.."
+		mkdir $TEST_DIR
 fi
 
 CWD=$(pwd)
@@ -131,24 +129,24 @@ cd $TEST_DIR
 title="${METHOD_NM}" 
 printf "${BLUE}%*s\n\n${NC}" $(((${#title}+$COLUMNS)/2)) "$title"
 
-# Check existence of input directories
+# Check existence of new input directories
 if [ ! -d "${INPUT_DIR}" ]; then
-    echo "Creating input directory.."
-    mkdir $INPUT_DIR
+		echo "Creating input directory.."
+		mkdir $INPUT_DIR
 fi
 if [ ! -d "${INPUT_DIR}/${SAMPLES}" ]; then
-    echo "Creating samples directory.."
-    mkdir $INPUT_DIR/$SAMPLES
+		echo "Creating samples directory.."
+		mkdir $INPUT_DIR/$SAMPLES
 fi
 
 # Check existence of output directories
 if [ ! -d "${OUTPUT_DIR}" ]; then
-    echo "Creating output directory.."
-    mkdir $OUTPUT_DIR
+		echo "Creating output directory.."
+		mkdir $OUTPUT_DIR
 fi
 if [ ! -d "${OUTPUT_DIR}/${SAMPLES}" ]; then
-    echo "Creating samples directory.."
-    mkdir $OUTPUT_DIR/$SAMPLES
+		echo "Creating samples directory.."
+		mkdir $OUTPUT_DIR/$SAMPLES
 fi
 
 IN_DIR="${INPUT_DIR}/${SAMPLES}"
@@ -163,45 +161,58 @@ OUT_DIR="${OUTPUT_DIR}/${SAMPLES}"
 # Run GULP and save output
 counter=1
 for file in "${filesList[@]}"; do
+	# Check if file exists
+	if [ ! -f $file ]; then
+		echo "File not found"
+		continue
+	fi
 
-    # Check if file exists
-    if [ ! -f $file ]; then
-      echo "File not found"
-      continue
-    fi
+	if [ ! -d "${IN_DIR}/structure${counter}" ]; then
+		echo "Creating structure's directory of inputs.."
+		mkdir $IN_DIR/structure${counter}
+	fi
 
-    # Log file
-    printf "\n`date`\n File : %s\n" "$file" >> $LOG
+	if [ ! -d "${OUT_DIR}/structure${counter}" ]; then
+		echo "Creating structure's directory of outputs.."
+		mkdir $OUT_DIR/structure${counter}
+	fi
 
-    # Run GULP relaxation
-    python method.py $method $file $ARGS || {
-        printf "\n`date` Python script failed with file \"%s\".\n" "$file" >> $LOG
-    }
+	# Log file
+	printf "\n`date`\n File : %s\n" "$file" >> $LOG
 
-    # Copy GULP IO to directories
-    GIN="${IN_DIR}/structure${counter}.gin"
-    GOT="${OUT_DIR}/structure${counter}.got"
+	# Run GULP relaxation
+	python method.py $method $file $ARGS || {
+			printf "\n`date` Python script failed with file \"%s\".\n" "$file" >> $LOG
+	}
 
-    cp "gulp.gin" "${GIN}"
-    cp "gulp.got" "${GOT}"
+	# Copy GULP IO to directories
+	GIN="${IN_DIR}/structure${counter}/structure${counter}.gin"
+	GOT="${OUT_DIR}/structure${counter}/structure${counter}.got"
 
-    # Map structure to initial file
-    printf "${file} : ${SAMPLES}/structure${counter}\n" >> $MAP
+	cp "gulp.gin" "${GIN}"
+	cp "gulp.got" "${GOT}"
+	cp *".grs" ${OUT_DIR}/structure${counter}
+	cp *".cif" ${OUT_DIR}/structure${counter}
+	rm *".grs"
+	rm *".cif"
 
-    # Add results to csv
-    printf "Reading GULP output"
-    python read_gulp.py $GOT results.csv $METHOD_NM
-    printf "${GREEN}DONE${NC}\n\n"
+	# Map structure to initial file
+	printf "${file} : ${SAMPLES}/structure${counter}\n" >> $MAP
 
-    # Count total
-    ((counter++))
+	# Add results to csv
+	printf "Reading GULP output"
+	python read_gulp.py $GOT results.csv $SAMPLES $METHOD_NM
+	printf "${GREEN}DONE${NC}\n\n"
+
+	# Count total
+	((counter++))
 done
 
 title="${METHOD_NM}" 
 printf "${BLUE}%*s\n\n${NC}" $(((${#title}+$COLUMNS)/2)) "$title"
 
 if [[ -f  temp.txt ]]; then
-  rm temp.txt
+	rm temp.txt
 fi
 
 rm gulp.gin

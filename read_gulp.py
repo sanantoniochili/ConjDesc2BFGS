@@ -24,6 +24,9 @@ if __name__ == "__main__":
 		'ofilename', metavar='--output', type=str,
 		help='.csv file to produce')
 	parser.add_argument(
+		'folder', metavar='--folder', type=str,
+		help='Structure kind')
+	parser.add_argument(
 		'method', metavar='--method', type=str,
 		help='Method used')
 	args = parser.parse_args()
@@ -52,8 +55,7 @@ if __name__ == "__main__":
 		info = Info(file, {})
 		info.catg['structure'] = [
 			args.ifilename.split('/')[-1].split('.')[0]]
-		info.catg['folder'] = [
-			args.ifilename.split('/')[-2]]
+		info.catg['folder'] = args.folder
 		info.catg['method'] = args.method
 
 		# Initialisation

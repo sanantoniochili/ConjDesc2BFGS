@@ -48,8 +48,7 @@ class Method:
 
 ''' Set options '''
 
-def set_options(args):
-	options = []
+def set_options(args, options=[]):
 	if args.t != -1:
 		print("-----Using time_out.")
 		options += ['time ' + str(args.t)]
@@ -60,7 +59,7 @@ def set_options(args):
 				options += [line.rstrip('\n')]
 	if args.switch:
 		print("-----Switching methods.")
-		switch_str = 'switch_minimiser '+args.switch+' gnorm 0.5'
+		switch_str = 'switch_minimiser '+args.switch+' gnorm 0.1'
 		options += [switch_str]
 	if options:
 		print("-----Using options:")
@@ -95,16 +94,17 @@ if __name__ == "__main__":
 	print("-----About to use "+args.method +
 		  " with input file:" + str(args.ifilename))
 
-	options = set_options(args)
+	options = set_options(args, ['dump every 10 trajectory.grs noover',\
+		'output cif final_structure'])
 	with open('temp.txt', 'w') as f:
 		for item in options:
 			f.write("%s\n" % item)
 
 	''' Set GULP parameters and calculate energy '''
 	# m = Method(args.method, ['opti'], options, 'buck.lib')
-	# m = Method(args.method, ['opti', 'unfix'], options, 'buck.lib')
+	m = Method(args.method, ['opti', 'unfix'], options, 'buck.lib')
 	# m = Method(args.method, ['opti', 'c6'], options, 'buck.lib')
-	m = Method(args.method, ['opti', 'c6', 'unfix'], options, 'buck.lib')
+	# m = Method(args.method, ['opti', 'c6', 'unfix'], options, 'buck.lib')
 
 	m.set_atoms(read(args.ifilename))
 	m.set_calc()  # set GULP
