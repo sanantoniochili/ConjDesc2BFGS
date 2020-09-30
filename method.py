@@ -94,7 +94,7 @@ if __name__ == "__main__":
 	print("-----About to use "+args.method +
 		  " with input file:" + str(args.ifilename))
 
-	options = set_options(args, ['dump every 10 trajectory.grs noover',\
+	options = set_options(args, ['dump every noover generated trajectory.grs',\
 		'output cif final_structure'])
 	with open('temp.txt', 'w') as f:
 		for item in options:

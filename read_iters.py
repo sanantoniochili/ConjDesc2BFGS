@@ -169,6 +169,9 @@ def alphanum_key(s):
 import csv
 from pathlib import Path
 def read_positions(args):
+	import sys
+	sys.path.append('/home/sanantoniochili/Desktop/PhD/Scripts/GULP_Python')
+	from gulp import read_gulp
 	"""This function gathers the positions of the ions from every trajectory file 
 	produced along with the initial and final positions from the respective
 	.cif files found. 
@@ -192,35 +195,31 @@ def read_positions(args):
 	# Empty dataframe
 	df = pd.DataFrame()
 
-	# Hard coded initial cif files
-	random_dir = '/home/sanantoniochili/Desktop/PhD/Data/random'
-	rattled_dir ='/home/sanantoniochili/Desktop/PhD/Data/rattled'
-	kind_dirs = [random_dir,rattled_dir]
-	struct_dict = {}
-	print("Creating dictionaries to keep initial positions...")
-	# random structures
-	for path in Path(random_dir).rglob('*.cif'):
-		atoms = aread(path)
-		positions = atoms.get_positions()
-		count_ions = 0
-		points_init = []
-		for ion in atoms.get_chemical_symbols():
-			points_init += [ion+'_init',tuple(list(positions[count_ions,:]))]
-			count_ions += 1
-		struct_dict[(str(path),'random')] = points_init
-		# print("File "+path.name+" is done.")
-	for path in Path(rattled_dir).rglob('*.cif'):
-		atoms = aread(path)
-		positions = atoms.get_positions()
-		count_ions = 0
-		points_init = []
-		for ion in atoms.get_chemical_symbols():
-			points_init += [ion+'_init',tuple(list(positions[count_ions,:]))]
-			count_ions += 1
-		struct_dict[(str(path),'rattled')] = points_init
-		# print("File "+path.name+" is done.")
-	print("Dictionary created.\n")
+	# # Initial cif files
+	# print("Give data directory path:")
+	# DATAPATH = input()
+	# print("Give directories with datafiles:")
+	# data_flist = [folder for folder in input().split(',')]
 
+	# df_init = pd.DataFrame()
+	# print("Creating dataframes to keep initial positions...")
+	# for folder in data_flist:
+	# 	folder_path = DATAPATH+'/'+folder
+	# 	for path in Path(folder_path).rglob('*.cif'): # every structure
+	# 		struct_dict = {'structure':path.name, 
+	# 			'folder':folder}
+	# 		atoms = aread(path)
+	# 		positions = atoms.get_positions()
+	# 		count_ions = 0
+	# 		for ion in atoms.get_chemical_symbols():
+	# 			struct_dict[ion+str(count_ions)] = tuple(list(positions[count_ions,:]))
+	# 			count_ions += 1
+	# 		df_init = df_init.append([struct_dict], ignore_index=True, sort=False)
+	# 		# print("File "+path.name+" is done.")
+	# df_init = df_init.set_index('structure')
+	# df_init.to_csv(args.test_dir+"/temp.csv")
+
+	df_init = pd.read_csv(args.test_dir+"/temp.csv", index_col=['structure','folder'])
 	print("Searching for trajectory and final files..")
 	dirs = [d for d in os.listdir(args.test_dir) # find all directory objects
 			if os.path.isdir(os.path.join(args.test_dir,d))] # check if is directory
@@ -242,56 +241,65 @@ def read_positions(args):
 			if os.path.isdir(rpath)] # check if is directory
 			for d in sdirs: # every structure
 				with open(MAP,'r') as mapfile:
-					print("Looking through trajectories of "+d+".",end=" ")
+					# print("Looking through trajectories of "+d+".",end=" ")
 
 					# Find correct pairs of cif and grs/gin/got files
 					# d contains the structure name and r is the kind (random or rattled)
 					for line in mapfile:
 						if (r+'/'+d+'\n' in line):
-							map_from = line.split(":")[0].strip(' ')
+							map_from = line.split(":")[0].strip(' ').split('/')[-1]
 
-					# Define a list for each structure
+					# Define a Dataframe for each structure
 					fpath = rpath+'/'+d
-					points = [fpath.split('/')[-1].split('.')[0], # structure name
-								fpath.split('/')[-4], # random or rattled
-								fpath.split('/')[-2]] # method e.g. bfgs
+					name,method,folder = fpath.split('/')[-1].split('.')[0],fpath.split('/')[-4],fpath.split('/')[-2]
+					index = [[name], # structure name
+							[folder], # random or rattled
+							[method]] # method e.g. bfgs
+
+					# Prepare Dataframe
+					columns = df_init.columns
+					traj_list = sorted([f for f in os.listdir(fpath) if "grs" in f], key=alphanum_key)
+					ncolumns = pd.MultiIndex.from_product([['initial']+traj_list+['final'],columns])
+					df_struct = pd.DataFrame(index=index, columns=ncolumns)
+					df_struct.index.names = ['structure', 'folder', 'method']
 
 					# Add initial positions
-					points += struct_dict[(map_from,r)]
+					for col in df_init:
+						df_struct.at[(name,folder,method),('initial',col)] = df_init.loc[map_from,folder][col]
 
 					# Add intermediate positions
 					count = 0
-					traj_list = sorted([f for f in os.listdir(fpath) if "grs" in f], key=alphanum_key)
 					rest_list = [f for f in os.listdir(fpath) if "cif" in f]
-					# Trajectory files
 					for file in traj_list:
 						filename = fpath+'/'+file
-						with open(filename,'r') as f:
-							flag = False
-							for line in f:
-								line = line.split(' ')
-								line_ = [s for s in line if s!='']
-								# Find the correct part of the file and keep the positions
-								if 'species' in line_ or len(line_)<8:
-									flag = False
-								if flag:
-									fileno = file.split('.')[0].split('_')[1]
-									points += [line_[0]+'_'+str(fileno),tuple(line_[2:5])]
-								if 'fractional' in line_:
-									flag = True
-					
-					# Final structure file
-					count_ions = 0
-					for file in rest_list:
-						atoms = aread(fpath+'/'+file)
+						atoms = read_gulp(filename)
 						positions = atoms.get_positions()
+						count_ions = 0
 						for ion in atoms.get_chemical_symbols():
-							points += [ion+'_final',tuple(list(positions[count_ions,:]))]
-							count_ions += 1
+							col = ion+str(count_ions) 
+							df_struct.loc[(name,folder,method),(file,col)] = \
+											tuple(list(positions[count_ions,:]))
+							count_ions+=1
 
-					with open(args.test_dir+'/'+args.ofilename+'.csv', 'a', newline='') as myfile:
-						wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
-						wr.writerow(points)
+					# with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
+					    # print(df_struct)
+
+					
+					# # Final structure file
+					# count_ions = 0
+					# for file in rest_list:
+					# 	atoms = aread(fpath+'/'+file)
+					# 	positions = atoms.get_positions()
+					# 	for ion in atoms.get_chemical_symbols():
+					# 		points += [ion+'_final',tuple(list(positions[count_ions,:]))]
+					# 		count_ions += 1
+
+					# # Add to all dataframe
+					# df = pd.concat([df,df_struct], axis=0, sort=False)
+
+					# with open(args.test_dir+'/'+args.ofilename, 'a', newline='') as myfile:
+					# 	wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
+					# 	wr.writerow(points)
 	print("Done.")					
 
 
