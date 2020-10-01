@@ -192,9 +192,6 @@ def read_positions(args):
 	ofilename = args.test_dir+'/'+args.ofilename
 	flist = []
 
-	# Empty dataframe
-	df = pd.DataFrame()
-
 	# # Initial cif files
 	# print("Give data directory path:")
 	# DATAPATH = input()
@@ -223,18 +220,20 @@ def read_positions(args):
 	print("Searching for trajectory and final files..")
 	dirs = [d for d in os.listdir(args.test_dir) # find all directory objects
 			if os.path.isdir(os.path.join(args.test_dir,d))] # check if is directory
-	for d in dirs: # for every method folder
-		print("For method "+d+":")
-		MAP = args.test_dir+'/'+d+'/map_files.txt'
+	for method in dirs: # for every method folder
+		print("For method "+method+":")
+		MAP = args.test_dir+'/'+method+'/map_files.txt'
 		print("Opened map file to match initial files to output files.")
 		# Find trajectory and final files
-		dout = d+'/output'
+		dout = method+'/output'
 		if not os.path.exists(os.path.join(args.test_dir,dout)):
 			continue
 		path = args.test_dir+'/'+dout
 		sampledirs = [d_ for d_ in os.listdir(path) # find all directory objects
 			if os.path.isdir(os.path.join(path,d_))] # check if is directory
 
+		# Empty Dataframe
+		df = pd.DataFrame()
 		for r in sampledirs: # rattled or random
 			rpath = os.path.join(path,r)
 			sdirs = [d for d in os.listdir(rpath) # find all directory objects
@@ -252,16 +251,19 @@ def read_positions(args):
 					# Define a Dataframe for each structure
 					fpath = rpath+'/'+d
 					name,method,folder = fpath.split('/')[-1].split('.')[0],fpath.split('/')[-4],fpath.split('/')[-2]
-					index = [[name], # structure name
-							[folder], # random or rattled
-							[method]] # method e.g. bfgs
+					# index = [[name], # structure name
+					# 		[folder], # random or rattled
+					# 		[method]] # method e.g. bfgs
 
 					# Prepare Dataframe
 					columns = df_init.columns
 					traj_list = sorted([f for f in os.listdir(fpath) if "grs" in f], key=alphanum_key)
-					ncolumns = pd.MultiIndex.from_product([['initial']+traj_list+['final'],columns])
-					df_struct = pd.DataFrame(index=index, columns=ncolumns)
-					df_struct.index.names = ['structure', 'folder', 'method']
+					ncolumns = pd.MultiIndex.from_product([['initial']+traj_list,columns]).append(pd.Index(['structure','folder','method']))
+					df_struct = pd.DataFrame(columns=ncolumns)
+					df_struct = df_struct.set_index(['structure','folder','method'])
+
+					# with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
+					    # print(df_struct)
 
 					# Add initial positions
 					for col in df_init:
@@ -269,7 +271,6 @@ def read_positions(args):
 
 					# Add intermediate positions
 					count = 0
-					rest_list = [f for f in os.listdir(fpath) if "cif" in f]
 					for file in traj_list:
 						filename = fpath+'/'+file
 						atoms = read_gulp(filename)
@@ -282,24 +283,16 @@ def read_positions(args):
 							count_ions+=1
 
 					# with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
-					    # print(df_struct)
-
+					#     print(df_struct)
 					
-					# # Final structure file
-					# count_ions = 0
-					# for file in rest_list:
-					# 	atoms = aread(fpath+'/'+file)
-					# 	positions = atoms.get_positions()
-					# 	for ion in atoms.get_chemical_symbols():
-					# 		points += [ion+'_final',tuple(list(positions[count_ions,:]))]
-					# 		count_ions += 1
+					# Add to method dataframe
+					if df.empty:
+						df = df_struct
+					else:
+						df = df.append(df_struct)
+						# df = df.reset_index(drop=True)
+		df.to_csv(args.test_dir+'/'+args.ofilename+'_'+method+'.csv')
 
-					# # Add to all dataframe
-					# df = pd.concat([df,df_struct], axis=0, sort=False)
-
-					# with open(args.test_dir+'/'+args.ofilename, 'a', newline='') as myfile:
-					# 	wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
-					# 	wr.writerow(points)
 	print("Done.")					
 
 
