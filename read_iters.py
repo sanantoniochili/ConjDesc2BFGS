@@ -155,21 +155,22 @@ def read_iters(args):
 
 import re
 def tryint(s):
-    try:
-        return int(s)
-    except:
-        return s
+	try:
+		return int(s)
+	except:
+		return s
 
 def alphanum_key(s):
-    """ Turn a string into a list of string and number chunks.
-        "z23a" -> ["z", 23, "a"]
-    """
-    return [ tryint(c) for c in re.split('([0-9]+)', s) ]
+	""" Turn a string into a list of string and number chunks.
+		"z23a" -> ["z", 23, "a"]
+	"""
+	return [ tryint(c) for c in re.split('([0-9]+)', s) ]
 
 import csv
 from pathlib import Path
 def read_positions(args):
 	import sys
+	import numpy as np
 	sys.path.append('/home/sanantoniochili/Desktop/PhD/Scripts/GULP_Python')
 	from gulp import read_gulp
 	"""This function gathers the positions of the ions from every trajectory file 
@@ -220,6 +221,11 @@ def read_positions(args):
 	print("Searching for trajectory and final files..")
 	dirs = [d for d in os.listdir(args.test_dir) # find all directory objects
 			if os.path.isdir(os.path.join(args.test_dir,d))] # check if is directory
+
+	# Delete previous file contents
+	if os.path.isfile(args.test_dir+'/'+args.ofilename+'.csv'):
+		open(args.test_dir+'/'+args.ofilename+'.csv', 'w').close()
+
 	for method in dirs: # for every method folder
 		print("For method "+method+":")
 		MAP = args.test_dir+'/'+method+'/map_files.txt'
@@ -232,8 +238,6 @@ def read_positions(args):
 		sampledirs = [d_ for d_ in os.listdir(path) # find all directory objects
 			if os.path.isdir(os.path.join(path,d_))] # check if is directory
 
-		# Empty Dataframe
-		df = pd.DataFrame()
 		for r in sampledirs: # rattled or random
 			rpath = os.path.join(path,r)
 			sdirs = [d for d in os.listdir(rpath) # find all directory objects
@@ -251,19 +255,19 @@ def read_positions(args):
 					# Define a Dataframe for each structure
 					fpath = rpath+'/'+d
 					name,method,folder = fpath.split('/')[-1].split('.')[0],fpath.split('/')[-4],fpath.split('/')[-2]
-					# index = [[name], # structure name
-					# 		[folder], # random or rattled
-					# 		[method]] # method e.g. bfgs
 
 					# Prepare Dataframe
 					columns = df_init.columns
 					traj_list = sorted([f for f in os.listdir(fpath) if "grs" in f], key=alphanum_key)
-					ncolumns = pd.MultiIndex.from_product([['initial']+traj_list,columns]).append(pd.Index(['structure','folder','method']))
-					df_struct = pd.DataFrame(columns=ncolumns)
-					df_struct = df_struct.set_index(['structure','folder','method'])
-
-					# with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
-					    # print(df_struct)
+					ncolumns = pd.Index([
+							('initial','structure'),('initial','folder'),('initial','method')]).append(
+							pd.MultiIndex.from_product([['initial']+traj_list,columns]))
+					df_struct = pd.DataFrame({('initial','structure'):[name],
+												('initial','folder'):[folder],
+												('initial','method'):[method]}, columns=ncolumns)
+					df_struct = df_struct.set_index([('initial','structure'),
+												('initial','folder'),
+												('initial','method')])
 
 					# Add initial positions
 					for col in df_init:
@@ -282,16 +286,29 @@ def read_positions(args):
 											tuple(list(positions[count_ions,:]))
 							count_ions+=1
 
-					# with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
-					#     print(df_struct)
-					
-					# Add to method dataframe
-					if df.empty:
-						df = df_struct
-					else:
-						df = df.append(df_struct)
-						# df = df.reset_index(drop=True)
-		df.to_csv(args.test_dir+'/'+args.ofilename+'_'+method+'.csv')
+					# Print to csv as rows
+					struct_dict = df_struct.to_dict(orient='index')
+					with open(args.test_dir+'/'+args.ofilename+'.csv', 'a') as csv_file:  
+						writer = csv.writer(csv_file)
+						for key, values in struct_dict.items():
+							vlist = []
+							for col,value in values.items():
+								vlist += [col,value]
+							writer.writerow([key]+vlist)
+
+					# with open('test.csv', mode='r') as infile:
+					# 	reader = csv.reader(infile)
+					# 	for rows in reader: # per structure
+					# 		mydict = {}
+					# 		count = 1
+					# 		while count<len(rows)-1:
+					# 			mydict[rows[count]] = rows[count+1]
+					# 			count+=2
+					# 		cols = [eval(key) for key in mydict]
+
+		# with pd.option_context('display.max_rows', 5, 'display.max_columns', 20):  # more options can be specified also
+		#     print(df)
+		# return
 
 	print("Done.")					
 
