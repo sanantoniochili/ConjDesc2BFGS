@@ -6,48 +6,96 @@ import argparse
 import collections
 import pandas as pd
 from ase.io import read as aread
+from ase.units import eV, Ang
+import numpy as np
+from ase import Atoms
+sys.path.append('/home/sanantoniochili/Desktop/PhD/Scripts/Switch_Implementation/gradients_implementation/cysrc')
+
+LIBFILE = "../../Data/Libraries/buck.lib"
+RADFILE = "../../Data/Libraries/radii.lib"
 
 class Info:
 	def __init__(self, file, catg):  # create dict
 		self.file = file
 		self.catg = catg
 
+import re
+def tryint(s):
+	try:
+		return int(s)
+	except:
+		return s
+
+def alphanum_key(s):
+	""" Turn a string into a list of string and number chunks.
+		"z23a" -> ["z", 23, "a"]
+	"""
+	return [ tryint(c) for c in re.split('([0-9]+)', s) ]
+
+def to_cartesian(positions, a, b, c, alpha, beta, gamma,
+							   angle_in_degrees=True):
+	"""
+	Convert scaled to Cartesian coordinates.
+
+	"""
+	atoms = Atoms(scaled_positions=positions, cell=[a,b,c,alpha,beta,gamma])
+	return atoms.get_positions()
+
+def read_radius_file():
+	radius_dict = {}
+	with open(RADFILE, 'r') as file:	
+		for line in file:
+			radius_dict[line.split()[0]] = float(line.split()[1])
+	return radius_dict
+
 def read_iters(args):
+	"""
+	Record information about the structural relaxation
+	from GULP output files into a csv file.
+
+	"""
 	flist = []
 	dirs = [d for d in os.listdir(args.test_dir) # find all directory objects
 			if os.path.isdir(os.path.join(args.test_dir,d))] # check if is directory
 	for d in dirs: # for every method folder
-		d += '/output'
-		if not os.path.exists(os.path.join(args.test_dir,d)):
-			continue
-		path = args.test_dir+'/'+d
-		sampledirs = [d_ for d_ in os.listdir(path) # find all directory objects
-			if os.path.isdir(os.path.join(path,d_))] # check if is directory
-		for r in sampledirs: # rattled or random
-			rpath = os.path.join(path,r)
-			flist += [os.path.join(rpath,file) # list all files
-						for file in os.listdir(rpath) if file.endswith(".got")]
+		dpath = os.path.join(args.test_dir,d)
+		flist += [str(path) for path in Path(dpath).rglob('*.got')] # list of every got file
+	flist = sorted(flist, key=alphanum_key)
+
 	count=0
-	ofilename = args.test_dir+'/'+args.ofilename
+	ofilename = args.test_dir+'/'+args.ofilename # output file
+	structs_dict = {}
+
 	# Get energies and gnorms for all files 
 	#	in method directory in one dataframe
 	for filename in flist:
 		count_stepc=0 # count step size iters
 		with open(filename, 'r') as file:
+			filename_str = str(filename)
 			info = Info(file, {})
 			info.catg['structure'] = [
-				filename.split('/')[-1].split('.')[0]]
-			info.catg['method'] = filename.split('/')[-4]
-			info.catg['folder'] = filename.split('/')[-2]
+				filename_str.split('/')[-1].split('.')[0]]
+			info.catg['method'] = filename_str.split('/')[2]
+			info.catg['folder'] = filename_str.split('/')[4]
+			info.catg['opt_succ'] = False
 			df = pd.DataFrame.from_dict(info.catg, orient='columns')
 
 			Es = [] # lists for each file
 			Gns = []
 			Steps = []
 			Inters = []
+			symbols = []
 			iflag = True # keep only first interatomic potential
+			pos_flaf = False
+			struct_dict = {}
+			positions = []
 
-			for line in file:
+			# cell parameters
+			a, b, c = .0,.0,.0
+			alpha, beta, gamma = .0,.0,.0
+
+			lines = file.readlines()
+			for i, line in enumerate(lines):
 				if args.step: # keeping records of step sizes and respective energy levels
 					if "new    ..." in line:
 						line_ = line.split('...')[1].rstrip().lstrip(' ').split(' ') # remove first part of line
@@ -86,6 +134,61 @@ def read_iters(args):
 						Inters.append(line.split()[-2])
 						iflag = False
 
+				# read cell parameters
+				if ("a =" in line) & ("alpha" in line):
+					import re
+					a_line = line.replace(" ", "").rstrip('\n').split("alpha")
+					a = float(a_line[0].split("=")[-1])
+					alpha = float(a_line[1].split("=")[-1])
+
+				elif ("b =" in line) & ("beta" in line):
+					import re
+					b_line = line.replace(" ", "").rstrip('\n').split("beta")
+					b = float(b_line[0].split("=")[-1])
+					beta = float(b_line[1].split("=")[-1])
+
+				elif ("c =" in line) & ("gamma" in line):
+					import re
+					c_line = line.replace(" ", "").rstrip('\n').split("gamma")
+					c = float(c_line[0].split("=")[-1])
+					gamma = float(c_line[1].split("=")[-1])
+
+				if "Optimisation achieved" in line:
+					# Check if optimisation succeeded
+					info.catg['opt_succ'] = True
+
+				if ("Final" in line) & ("coordinates" in line):
+					iline = i + 5
+					scaled_positions = []
+					while(True):
+						# read positions table
+						iline = iline + 1
+						if lines[iline].find("------------") != -1:
+							break
+						xyz = lines[iline].split()[3:6]
+						symbol = lines[iline].split()[1]+lines[iline].split()[0]
+						XYZ = [float(x) * Ang for x in xyz]
+						scaled_positions.append(XYZ)
+						symbols.append(symbol)
+						# checks for cell vectors
+						assert(a*b*c)
+						assert(alpha*beta*gamma)
+						positions = to_cartesian(np.array(scaled_positions),
+							a=a,b=b,c=c,
+							alpha=alpha,beta=beta,gamma=gamma)
+						# fill dataframe
+						i = 0
+						for symbol in symbols:
+							struct_dict[symbol] = tuple(positions[i,])
+							i += 1
+
+			if args.positions:
+				key = tuple([info.catg['structure'][0],
+					info.catg['method'],
+					info.catg['folder']])
+				struct_dict['opt_succ'] = info.catg['opt_succ']
+				structs_dict[key] = struct_dict
+
 			if args.energy:
 				dfe = pd.DataFrame(Es).T
 				dfe_ = df.join(dfe)
@@ -109,6 +212,22 @@ def read_iters(args):
 			# dfsi = pd.DataFrame(Stepi).T
 			# dfsi_ = df.join(dfsi)
 			# dfsi_ = dfsi_.set_index(['structure', 'method'])
+
+			# Check if Buckingham catastrophe happened
+			if symbols==[]:
+				continue
+			import potential
+			Bpot = potential.Buckingham()
+			chemical_symbols = np.array([re.split('([0-9]+)', s)[0] for s in symbols])
+			Bpot.set_parameters(
+				filename=LIBFILE,
+				chemical_symbols=chemical_symbols)
+			radius_dict = read_radius_file()
+			thres_value = 0.5
+			check = Bpot.catastrophe_check(positions, thres_value, radius_dict)
+			# if catastrophe happened keep the threshold that was used to check
+			# the ions' distance
+			struct_dict['catastrophe'] = check*thres_value 
 
 		''' Merge dataframes '''
 		if count:
@@ -150,25 +269,42 @@ def read_iters(args):
 		with open(args.test_dir+'/'+args.ofilename+'_interatomic.csv', 'w') as f:
 			dfseis.to_csv(f, header=True)
 
-		# with open(args.test_dir+'/'+args.ofilename+'_stepi.csv', 'w') as f:
-		# 	dfsis.to_csv(f, header=True)
+	if args.positions:
+		# print(structs_dict)
+		import pickle
+		pickle.dump( structs_dict, 
+			open( args.test_dir+'/'+args.ofilename+"_positions.p", "wb" ) )
+		
+def read_initial_positions(args):
+	# Initial cif files
+	print("Give data directory path:")
+	DATAPATH = input()
+	print("Give directories with datafiles:")
+	data_flist = [folder for folder in input().split(',')]
 
-import re
-def tryint(s):
-	try:
-		return int(s)
-	except:
-		return s
+	init_dict = {}
+	print("Creating dictionary to keep initial positions...")
+	for folder in data_flist:
+		folder_path = DATAPATH+'/'+folder
+		for path in Path(folder_path).rglob('*.cif'): # every structure
+			struct_dict = {}
+			atoms = aread(path)
+			positions = atoms.get_positions()
+			count_ions = 0
+			for ion in atoms.get_chemical_symbols():
+				struct_dict[ion+str(count_ions)] = tuple(list(positions[count_ions,:]))
+				count_ions += 1
+			init_dict[(path.name,folder)] = struct_dict
+			# print("File "+path.name+" is done.")
 
-def alphanum_key(s):
-	""" Turn a string into a list of string and number chunks.
-		"z23a" -> ["z", 23, "a"]
-	"""
-	return [ tryint(c) for c in re.split('([0-9]+)', s) ]
+	print("Dumped "+str(len(init_dict.keys()))+" structures\' initial \
+	positions into "+args.test_dir+"/temp.p")
+	import pickle
+	pickle.dump( init_dict, open( args.test_dir+"/temp.p", "wb" ) )
 
 import csv
 from pathlib import Path
-def read_positions(args):
+def read_trajectory_positions(args):
 	import sys
 	import numpy as np
 	sys.path.append('/home/sanantoniochili/Desktop/PhD/Scripts/GULP_Python')
@@ -193,38 +329,11 @@ def read_positions(args):
 	ofilename = args.test_dir+'/'+args.ofilename
 	flist = []
 
-	# # Initial cif files
-	# print("Give data directory path:")
-	# DATAPATH = input()
-	# print("Give directories with datafiles:")
-	# data_flist = [folder for folder in input().split(',')]
-
-	# df_init = pd.DataFrame()
-	# print("Creating dataframes to keep initial positions...")
-	# for folder in data_flist:
-	# 	folder_path = DATAPATH+'/'+folder
-	# 	for path in Path(folder_path).rglob('*.cif'): # every structure
-	# 		struct_dict = {'structure':path.name, 
-	# 			'folder':folder}
-	# 		atoms = aread(path)
-	# 		positions = atoms.get_positions()
-	# 		count_ions = 0
-	# 		for ion in atoms.get_chemical_symbols():
-	# 			struct_dict[ion+str(count_ions)] = tuple(list(positions[count_ions,:]))
-	# 			count_ions += 1
-	# 		df_init = df_init.append([struct_dict], ignore_index=True, sort=False)
-	# 		# print("File "+path.name+" is done.")
-	# df_init = df_init.set_index('structure')
-	# df_init.to_csv(args.test_dir+"/temp.csv")
-
-	df_init = pd.read_csv(args.test_dir+"/temp.csv", index_col=['structure','folder'])
+	import pickle
+	init_dict = pickle.load( open( args.test_dir+"/temp.p", "rb" ) )
 	print("Searching for trajectory and final files..")
 	dirs = [d for d in os.listdir(args.test_dir) # find all directory objects
 			if os.path.isdir(os.path.join(args.test_dir,d))] # check if is directory
-
-	# Delete previous file contents
-	if os.path.isfile(args.test_dir+'/'+args.ofilename+'.csv'):
-		open(args.test_dir+'/'+args.ofilename+'.csv', 'w').close()
 
 	for method in dirs: # for every method folder
 		print("For method "+method+":")
@@ -237,6 +346,7 @@ def read_positions(args):
 		path = args.test_dir+'/'+dout
 		sampledirs = [d_ for d_ in os.listdir(path) # find all directory objects
 			if os.path.isdir(os.path.join(path,d_))] # check if is directory
+		structs_dict = {}
 
 		for r in sampledirs: # rattled or random
 			rpath = os.path.join(path,r)
@@ -252,26 +362,18 @@ def read_positions(args):
 						if (r+'/'+d+'\n' in line):
 							map_from = line.split(":")[0].strip(' ').split('/')[-1]
 
-					# Define a Dataframe for each structure
+					# Define a dict for each structure
 					fpath = rpath+'/'+d
 					name,method,folder = fpath.split('/')[-1].split('.')[0],fpath.split('/')[-4],fpath.split('/')[-2]
+					struct_dict = {}
 
-					# Prepare Dataframe
-					columns = df_init.columns
+					# Prepare dictionary
 					traj_list = sorted([f for f in os.listdir(fpath) if "grs" in f], key=alphanum_key)
-					ncolumns = pd.Index([
-							('initial','structure'),('initial','folder'),('initial','method')]).append(
-							pd.MultiIndex.from_product([['initial']+traj_list,columns]))
-					df_struct = pd.DataFrame({('initial','structure'):[name],
-												('initial','folder'):[folder],
-												('initial','method'):[method]}, columns=ncolumns)
-					df_struct = df_struct.set_index([('initial','structure'),
-												('initial','folder'),
-												('initial','method')])
 
 					# Add initial positions
-					for col in df_init:
-						df_struct.at[(name,folder,method),('initial',col)] = df_init.loc[map_from,folder][col]
+					init_struct = init_dict[(map_from,folder)]
+					struct_dict['initial'] = {ion : init_struct[ion] for ion in init_struct}
+					print(struct_dict)
 
 					# Add intermediate positions
 					count = 0
@@ -279,37 +381,16 @@ def read_positions(args):
 						filename = fpath+'/'+file
 						atoms = read_gulp(filename)
 						positions = atoms.get_positions()
-						count_ions = 0
-						for ion in atoms.get_chemical_symbols():
-							col = ion+str(count_ions) 
-							df_struct.loc[(name,folder,method),(file,col)] = \
-											tuple(list(positions[count_ions,:]))
-							count_ions+=1
+						struct_dict[file] = \
+						{atoms.get_chemical_symbols()[i]+str(i) : tuple(list(positions[i,:])) \
+																			for i in range(len(atoms.positions))}
+					# Add structure to all as a dictionary of files
+					structs_dict[(name, method, folder)] = struct_dict
 
-					# Print to csv as rows
-					struct_dict = df_struct.to_dict(orient='index')
-					with open(args.test_dir+'/'+args.ofilename+'.csv', 'a') as csv_file:  
-						writer = csv.writer(csv_file)
-						for key, values in struct_dict.items():
-							vlist = []
-							for col,value in values.items():
-								vlist += [col,value]
-							writer.writerow([key]+vlist)
-
-					# with open('test.csv', mode='r') as infile:
-					# 	reader = csv.reader(infile)
-					# 	for rows in reader: # per structure
-					# 		mydict = {}
-					# 		count = 1
-					# 		while count<len(rows)-1:
-					# 			mydict[rows[count]] = rows[count+1]
-					# 			count+=2
-					# 		cols = [eval(key) for key in mydict]
-
-		# with pd.option_context('display.max_rows', 5, 'display.max_columns', 20):  # more options can be specified also
-		#     print(df)
-		# return
-
+		# Print to pickle for every method
+		import pickle
+		outfile = args.test_dir+'/'+method+'/'+args.ofilename+'_positions.p'
+		pickle.dump( structs_dict, open( outfile, "wb" ) )
 	print("Done.")					
 
 
@@ -324,6 +405,9 @@ if __name__ == "__main__":
 		'test_dir', metavar='--test_folder', type=str,
 		help='Define test environment folder')
 	parser.add_argument(
+		'-t', '--trajectory', action='store_true',
+		help='Define if there whole trajectory is to be found.')
+	parser.add_argument(
 		'-e', '--energy', action='store_true',
 		help='Records of final energy')
 	parser.add_argument(
@@ -336,6 +420,9 @@ if __name__ == "__main__":
 		'-i', '--interatomic', action='store_true',
 		help='Records of interatomic energy values')
 	parser.add_argument(
+		'-p', '--positions', action='store_true',
+		help='Records of final positions.')
+	parser.add_argument(
 		'--all', action='store_true',
 		help='Records of all values')
 	args = parser.parse_args()
@@ -345,5 +432,10 @@ if __name__ == "__main__":
 		args.gnorm  = True
 		args.step   = True
 		args.interatomic  = True
+		args.positions = True
 
-	read_positions(args)
+	if args.trajectory:
+		# read_initial_positions(args)
+		read_trajectory_positions(args)
+	else:
+		read_iters(args)
