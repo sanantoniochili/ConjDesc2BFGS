@@ -81,7 +81,7 @@ INPUT_DIR="input"
 OUTPUT_DIR="output"
 
 # Data DIR
-DATA_DIR="/home/sanantoniochili/Desktop/PhD/Data"
+DATA_DIR="/users/phd/tonyts/Desktop/Data"
 
 # Map file
 MAP="map_files.txt"
@@ -163,7 +163,7 @@ counter=1
 for file in "${filesList[@]}"; do
 	# Check if file exists
 	if [ ! -f $file ]; then
-		echo "File not found"
+		echo "File ${file} not found"
 		continue
 	fi
 
