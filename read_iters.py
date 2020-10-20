@@ -71,14 +71,17 @@ def read_iters(args):
 	for filename in flist:
 		count_stepc=0 # count step size iters
 		with open(filename, 'r') as file:
-			filename_str = str(filename)
-			info = Info(file, {})
-			info.catg['structure'] = [
-				filename_str.split('/')[-1].split('.')[0]]
-			info.catg['method'] = filename_str.split('/')[2]
-			info.catg['folder'] = filename_str.split('/')[4]
-			info.catg['opt_succ'] = False
-			df = pd.DataFrame.from_dict(info.catg, orient='columns')
+			try:
+				filename_str = str(filename)
+				info = Info(file, {})
+				info.catg['structure'] = [
+					filename_str.split('/')[-1].split('.')[0]]
+				info.catg['method'] = filename_str.split('/')[2]
+				info.catg['folder'] = filename_str.split('/')[4]
+				info.catg['opt_succ'] = False
+				df = pd.DataFrame.from_dict(info.catg, orient='columns')
+			except:
+				continue
 
 			Es = [] # lists for each file
 			Gns = []

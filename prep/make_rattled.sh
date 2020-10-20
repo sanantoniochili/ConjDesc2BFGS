@@ -1,6 +1,6 @@
 #!/bin/bash
 
-val=5
+val=0.5
 for x in {1..40}; do
 	python rattled.py $val $x rattled2
 	# val=$(awk "BEGIN {print $val+0.0001; exit}")
