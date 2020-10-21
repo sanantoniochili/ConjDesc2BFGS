@@ -167,6 +167,10 @@ for file in "${filesList[@]}"; do
 		continue
 	fi
 
+	if [ ! ${file: -4} == ".cif" ]; then
+		continue
+	fi
+
 	if [ ! -d "${IN_DIR}/structure${counter}" ]; then
 		echo "Creating structure's directory of inputs.."
 		mkdir $IN_DIR/structure${counter}
