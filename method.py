@@ -30,7 +30,7 @@ class Method:
 	''' Set GULP calculator '''
 
 	def set_calc(self):
-		keywords_ = ['conp full nosymm']
+		keywords_ = ['conp full nosymm linmin']
 		keywords_.append(self.name)
 		if len(self.keywords):
 			self.keywords = keywords_ + self.keywords

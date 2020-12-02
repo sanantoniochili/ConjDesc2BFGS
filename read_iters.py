@@ -41,13 +41,6 @@ def to_cartesian(positions, a, b, c, alpha, beta, gamma,
 	atoms = Atoms(scaled_positions=positions, cell=[a,b,c,alpha,beta,gamma])
 	return atoms.get_positions()
 
-def read_radius_file():
-	radius_dict = {}
-	with open(RADFILE, 'r') as file:	
-		for line in file:
-			radius_dict[line.split()[0]] = float(line.split()[1])
-	return radius_dict
-
 def read_iters(args):
 	"""
 	Record information about the structural relaxation
@@ -83,10 +76,11 @@ def read_iters(args):
 				continue
 
 			# lists for each csv file
-			Es = [] 
+			Es = []
 			Gns = []
 			Steps = []
 			Inters = []
+			Times = []
 
 			symbols = []
 			iflag = True # keep only first interatomic potential
@@ -100,21 +94,56 @@ def read_iters(args):
 
 			lines = file.readlines()
 			for i, line in enumerate(lines):
-				if args.step: # keeping records of step sizes and respective energy levels
-					pass
+				if args.step: # keeping records of step sizes 
+							  # and respective energy levels
+					step = None
+					energy = None
+					if "new    ..." in line:
+						line = line.split()[2:]
+						# take care of overlapping values
+						if len(line) == 1: 
+							line = line[0]
+							if ("*" in line):
+								step = line.split('*')[0]
+								energy = -math.inf
+							elif ("-" in line): 
+								both = line.lstrip('-')
+								step = both.split('-')[0]
+								# check if stepsize has negative value
+								if line[0] == "-": 
+									step = "-"+step
+								energy = "-"+both.split('-')[-1]
+						else:
+							step = line[0]
+							energy= line[1]
+
+						Es.append(energy)
+						Steps.append(step)
+						Gns.append(gnorm)
+						Times.append(time)
 
 				if "Cycle" in line:
-					if args.energy:
-						energy = line.split(':')[2].split(' ')[-3]
-					if args.gnorm:
-						gnorm = line.split(':')[3].split(' ')[-3]
-					if args.energy:
-						if "**" not in energy:
+					energy = line.split(':')[2].split()[0]
+					gnorm = line.split(':')[3].split()
+					time = line.split(':')[4].split()
+					if "**" in energy:
+						energy = -math.inf
+					if "**" in gnorm:
+						gnorm = -math.inf
+
+					# to avoid duplicates and initialise lists
+					if not args.step or (len(Es)==0): 
+						if args.energy:
 							Es.append(energy)
-					if args.gnorm:
-						if "**" not in gnorm:
+						if args.gnorm:
 							Gns.append(gnorm)
-					count_stepc=0 # step is stabilized
+						if args.time:
+							Times.append(time)
+					else:
+						if args.gnorm:
+							Gns[-1] = gnorm
+						if args.time:
+							Times[-1] = time
 
 				if "Interatomic potentials     =" in line:
 					if args.interatomic & iflag:
@@ -191,6 +220,11 @@ def read_iters(args):
 				dfs_ = df.join(dfs)
 				dfs_ = dfs_.set_index(['structure', 'method'])
 
+			if args.time:
+				dfst = pd.DataFrame(Times).T
+				dfst_ = df.join(dfst)
+				dfst_ = dfst_.set_index(['structure', 'method'])
+
 			if args.interatomic:
 				dfsei = pd.DataFrame(Inters).T
 				dfsei_ = df.join(dfsei)
@@ -204,11 +238,10 @@ def read_iters(args):
 			chemical_symbols = np.array([re.split('([0-9]+)', s)[0] for s in symbols])
 			Bpot.set_parameters(
 				filename=LIBFILE,
-				chemical_symbols=chemical_symbols)
-			radius_dict = read_radius_file()
+				chemical_symbols=chemical_symbols,
+				radius_lib=RADFILE)
 			thres_value = 0.5
-			check = Bpot.catastrophe_check(positions, thres_value, radius_dict)
-			
+			check = Bpot.catastrophe_check(positions, thres_value)
 			# if catastrophe happened keep the threshold that was used to check
 			# the ions' distance
 			struct_dict['catastrophe'] = check*thres_value 
@@ -221,8 +254,11 @@ def read_iters(args):
 				dfgs = pd.concat([dfgs,dfg_], axis=0, sort=False)
 			if args.step:
 				dfss = pd.concat([dfss,dfs_], axis=0, sort=False)
+			if args.time:
+				dfsts = pd.concat([dfsts,dfst_], axis=0, sort=False)
 			if args.interatomic:
 				dfseis = pd.concat([dfseis,dfsei_], axis=0, sort=False)
+
 		else: # initialise
 			if args.energy:
 				dfes = dfe_
@@ -230,8 +266,11 @@ def read_iters(args):
 				dfgs = dfg_
 			if args.step:
 				dfss = dfs_
+			if args.time:
+				dfsts = dfst_
 			if args.interatomic:
 				dfseis = dfsei_
+
 		count += 1
 
 	# for d in dirs:
@@ -247,11 +286,16 @@ def read_iters(args):
 		with open(args.test_dir+'/'+args.ofilename+'_step.csv', 'w') as f:
 			dfss.to_csv(f, header=True)
 
+	if args.time:
+		with open(args.test_dir+'/'+args.ofilename+'_time.csv', 'w') as f:
+			dfsts.to_csv(f, header=True)
+
 	if args.interatomic:
 		with open(args.test_dir+'/'+args.ofilename+'_interatomic.csv', 'w') as f:
 			dfseis.to_csv(f, header=True)
 
 	if args.positions:
+		# print(structs_dict)
 		import pickle
 		pickle.dump( structs_dict, 
 			open( args.test_dir+'/'+args.ofilename+"_positions.p", "wb" ) )
@@ -398,6 +442,9 @@ if __name__ == "__main__":
 		'-s', '--step', action='store_true',
 		help='Records of step sizes')
 	parser.add_argument(
+		'-ti', '--time', action='store_true',
+		help='Records of cpu time')
+	parser.add_argument(
 		'-i', '--interatomic', action='store_true',
 		help='Records of interatomic energy values')
 	parser.add_argument(
@@ -412,6 +459,7 @@ if __name__ == "__main__":
 		args.energy = True
 		args.gnorm  = True
 		args.step   = True
+		args.time = True
 		args.interatomic  = True
 		args.positions = True
 
