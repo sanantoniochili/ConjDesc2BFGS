@@ -69,7 +69,6 @@ def read_iters(args):
 	# Get energies and gnorms for all files 
 	#	in method directory in one dataframe
 	for filename in flist:
-		count_stepc=0 # count step size iters
 		with open(filename, 'r') as file:
 			try:
 				filename_str = str(filename)
@@ -83,10 +82,12 @@ def read_iters(args):
 			except:
 				continue
 
-			Es = [] # lists for each file
+			# lists for each csv file
+			Es = [] 
 			Gns = []
 			Steps = []
 			Inters = []
+
 			symbols = []
 			iflag = True # keep only first interatomic potential
 			pos_flaf = False
@@ -100,33 +101,16 @@ def read_iters(args):
 			lines = file.readlines()
 			for i, line in enumerate(lines):
 				if args.step: # keeping records of step sizes and respective energy levels
-					if "new    ..." in line:
-						line_ = line.split('...')[1].rstrip().lstrip(' ').split(' ') # remove first part of line
-						nline_ = list(filter(None, line_)) # remove blanks
-						step = nline_[0]
-						energy = nline_[-1]
-						if ("*" in energy[1:]):
-							step = energy.split('*')[0]
-							energy = -math.inf
-						elif ("-" in energy[1:]): # take care of overlapping values
-							both = energy.lstrip('-')
-							step = both.split('-')[0]
-							if energy[0] == "-":
-								step = "-"+step
-							energy = "-"+both.split('-')[-1]
-
-						Es.append(energy)
-						Steps.append(step)
-						count_stepc += 1
+					pass
 
 				if "Cycle" in line:
 					if args.energy:
 						energy = line.split(':')[2].split(' ')[-3]
 					if args.gnorm:
 						gnorm = line.split(':')[3].split(' ')[-3]
-					# if args.energy:
-						# if "**" not in energy:
-							# Es.append(energy)
+					if args.energy:
+						if "**" not in energy:
+							Es.append(energy)
 					if args.gnorm:
 						if "**" not in gnorm:
 							Gns.append(gnorm)
@@ -212,10 +196,6 @@ def read_iters(args):
 				dfsei_ = df.join(dfsei)
 				dfsei_ = dfsei_.set_index(['structure', 'method'])
 
-			# dfsi = pd.DataFrame(Stepi).T
-			# dfsi_ = df.join(dfsi)
-			# dfsi_ = dfsi_.set_index(['structure', 'method'])
-
 			# Check if Buckingham catastrophe happened
 			if symbols==[]:
 				continue
@@ -228,6 +208,7 @@ def read_iters(args):
 			radius_dict = read_radius_file()
 			thres_value = 0.5
 			check = Bpot.catastrophe_check(positions, thres_value, radius_dict)
+			
 			# if catastrophe happened keep the threshold that was used to check
 			# the ions' distance
 			struct_dict['catastrophe'] = check*thres_value 
@@ -242,7 +223,6 @@ def read_iters(args):
 				dfss = pd.concat([dfss,dfs_], axis=0, sort=False)
 			if args.interatomic:
 				dfseis = pd.concat([dfseis,dfsei_], axis=0, sort=False)
-			# dfsis = pd.concat([dfsis,dfsi_], axis=0, sort=False)												
 		else: # initialise
 			if args.energy:
 				dfes = dfe_
@@ -252,7 +232,6 @@ def read_iters(args):
 				dfss = dfs_
 			if args.interatomic:
 				dfseis = dfsei_
-			# dfsis = dfsi_
 		count += 1
 
 	# for d in dirs:
@@ -273,7 +252,6 @@ def read_iters(args):
 			dfseis.to_csv(f, header=True)
 
 	if args.positions:
-		# print(structs_dict)
 		import pickle
 		pickle.dump( structs_dict, 
 			open( args.test_dir+'/'+args.ofilename+"_positions.p", "wb" ) )
