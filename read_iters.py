@@ -101,7 +101,7 @@ def read_iters(args):
 					if "new    ..." in line:
 						line = line.split()[2:]
 						# take care of overlapping values
-						if len(line) == 1: 
+						if len(line) < 3: 
 							line = line[0]
 							if ("*" in line):
 								step = line.split('*')[0]
@@ -116,6 +116,7 @@ def read_iters(args):
 						else:
 							step = line[0]
 							energy= line[1]
+							time = line[2]
 
 						Es.append(energy)
 						Steps.append(step)
@@ -124,8 +125,8 @@ def read_iters(args):
 
 				if "Cycle" in line:
 					energy = line.split(':')[2].split()[0]
-					gnorm = line.split(':')[3].split()
-					time = line.split(':')[4].split()
+					gnorm = line.split(':')[3].split()[0]
+					time = line.split(':')[4].split()[0]
 					if "**" in energy:
 						energy = -math.inf
 					if "**" in gnorm:
@@ -142,8 +143,6 @@ def read_iters(args):
 					else:
 						if args.gnorm:
 							Gns[-1] = gnorm
-						if args.time:
-							Times[-1] = time
 
 				if "Interatomic potentials     =" in line:
 					if args.interatomic & iflag:
